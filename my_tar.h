@@ -9,6 +9,7 @@
 #include <sys/stat.h> 
 #include <sys/types.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 
 typedef struct s_options {
@@ -22,9 +23,9 @@ typedef struct s_options {
 
 typedef struct s_posix_header
 { 
-  char name[100];
-  char size[12];
-  char mtime[12];
+  char* name;
+  char* size;
+  char* mtime;
 } posix_header;
 
 typedef struct s_arguments {

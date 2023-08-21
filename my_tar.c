@@ -1,5 +1,4 @@
 #include "my_tar.h"
-#include <stdlib.h>
 
 
 void initializeOptions(options* op) {
@@ -79,6 +78,57 @@ data* parsing(int argc, char** argv) {
     return result;
 }
 
+
+
+void initialize_part_of_header(char* part, int size) {
+    part = malloc(sizeof(char) * size);
+    for (int i = 0; i < size; i++) {
+        part[i] = '\0';
+    }
+}
+
+char* my_itoa(int fsize) {
+    char* string = malloc(sizeof(char) * SIZE_OF_FILESIZE);
+    int fsizeCopy = fsize;
+    int index = 0;
+    while (fsizeCopy % 10 != 0) {
+        fsizeCopy /= 10;
+        index++;
+    }
+    for (int i = 1; i <= index && i < SIZE_OF_FILESIZE; i++) {
+        string[index - i] = (fsize % 10) + '0';
+        fsize /= 10;
+    }
+    for (int k = index; k < SIZE_OF_FILESIZE; k++) {
+        string[k] = '\0';
+    }
+    return string;
+}
+
+
+
+posix_header* initialize_header(int fd, arguments* argumentNode) {
+    posix_header* header = malloc(sizeof(posix_header));
+    initialize_part_of_header(header->name, SIZE_OF_NAME);
+    initialize_part_of_header(header->size, SIZE_OF_FILESIZE);
+    initialize_part_of_header(header->mtime, SIZE_OF_TIME);
+
+    strncpy(header->name, argumentNode->name, SIZE_OF_NAME);
+    int fsize = lseek(fd, 0, SEEK_END);
+    char* file_size_string = my_itoa(fsize);
+    strncpy(header->size, file_size_string, SIZE_OF_FILESIZE);
+
+    return header;
+}
+
+bool appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
+    posix_header* header = initialize_header(fd_file, argumentNode);
+
+    
+
+
+}
+
 bool createArchive(arguments* argumentNode) {
     if (argumentNode == NULL){
         printf("Error: No arguments while f flag is active\n");
@@ -95,7 +145,15 @@ bool createArchive(arguments* argumentNode) {
 
         while(argumentNode->next) {
             arguments* next_argument = argumentNode->next;
+
             printf("Argument: %s\n", next_argument->name);
+            int fd_file = open(argumentNode->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            if (fd_file == -1) {
+                printf("Error: something went wrong while opening the file");
+                return true;
+            }
+            appendToArchive(fd, fd_file, argumentNode);
+
             argumentNode = next_argument;
         }
     }
@@ -108,7 +166,7 @@ int main(int argc, char** argv) {
     options* op = data->options;
     arguments* argumentNode = data->arguments;
 
-    printf("Options: \n c:%d, r:%d, f:%d, t:%d, u:%d, x:%d\n", op->c, op->r, op->f, op->t, op->u, op->x);
+    printf("Options: \nc:%d, r:%d, f:%d, t:%d, u:%d, x:%d\n", op->c, op->r, op->f, op->t, op->u, op->x);
 
     if (op->c && op->f) {
         if (!createArchive(argumentNode)) {
