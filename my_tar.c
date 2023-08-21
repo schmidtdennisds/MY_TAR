@@ -79,6 +79,29 @@ data* parsing(int argc, char** argv) {
     return result;
 }
 
+bool createArchive(arguments* argumentNode) {
+    if (argumentNode == NULL){
+        printf("Error: No arguments while f flag is active\n");
+        return true;
+    } else {
+        int fd = open(argumentNode->name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+
+        if (fd == -1) {
+            printf("Error: something went wrong while creating the archive");
+            return true;
+        }
+        
+        printf("Archive %s created with following arguments:\n", argumentNode->name);
+
+        while(argumentNode->next) {
+            arguments* next_argument = argumentNode->next;
+            printf("Argument: %s\n", next_argument->name);
+            argumentNode = next_argument;
+        }
+    }
+    return false;
+}
+
 int main(int argc, char** argv) {
 
     data* data = parsing(argc, argv);
@@ -88,17 +111,8 @@ int main(int argc, char** argv) {
     printf("Options: \n c:%d, r:%d, f:%d, t:%d, u:%d, x:%d\n", op->c, op->r, op->f, op->t, op->u, op->x);
 
     if (op->c && op->f) {
-        if (argumentNode == NULL){
-            printf("Error: No arguments while f flag is active\n");
-        } else {
-            int fd = open(argumentNode->name, O_CREAT | O_RDWR);
-            printf("Archive %s created with following arguments:\n", argumentNode->name);
-
-            while(argumentNode->next) {
-                arguments* next_argument = argumentNode->next;
-                printf("Argument: %s\n", next_argument->name);
-                argumentNode = next_argument;
-            }
+        if (!createArchive(argumentNode)) {
+            return 1;
         }
     }
 }
