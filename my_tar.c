@@ -1,4 +1,6 @@
 #include "my_tar.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -117,11 +119,19 @@ posix_header* initialize_header(int fd, arguments* argumentNode) {
 
     strncpy(header->name, argumentNode->name, strlen(argumentNode->name));
     int fsize = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET); //get back to the beginning
     char* file_size_string = my_itoa(fsize);
     strncpy(header->size, file_size_string, strlen(file_size_string));
     free(file_size_string);
 
+    // time is missing
     return header;
+}
+
+void clearBlock(char* block) {
+    for (int i = 0; i < BLOCKSIZE; i++) {
+        block[i] = '\0';
+    }
 }
 
 bool appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
@@ -129,6 +139,26 @@ bool appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
     write(fd_archive, header->name, SIZE_OF_NAME);
     write(fd_archive, header->size, SIZE_OF_FILESIZE);
     write(fd_archive, "\n", 1);
+
+    char* block = malloc(sizeof(char) * BLOCKSIZE);
+    clearBlock(block);
+    int file_size = lseek(fd_file, 0, SEEK_END);
+    lseek(fd_file, 0, SEEK_SET); //get back to the beginning
+
+    while(file_size > 0) {
+        if (file_size / BLOCKSIZE > 0) {
+            read(fd_file, block, BLOCKSIZE);
+            write(fd_archive, block, BLOCKSIZE);
+        } else {
+            read(fd_file, block, file_size);
+            write(fd_archive, block, file_size);
+            write(fd_archive, "\n", 1);
+        }
+        clearBlock(block);
+        file_size -= BLOCKSIZE;
+    }
+
+
     free(header->name);
     free(header->size);
     free(header->mtime);
