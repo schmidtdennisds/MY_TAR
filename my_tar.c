@@ -1,8 +1,4 @@
 #include "my_tar.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 
 
 void initializeOptions(options* op) {
@@ -134,7 +130,7 @@ void clearBlock(char* block) {
     }
 }
 
-bool appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
+void appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
     posix_header* header = initialize_header(fd_file, argumentNode);
     write(fd_archive, header->name, SIZE_OF_NAME);
     write(fd_archive, header->size, SIZE_OF_FILESIZE);
@@ -158,24 +154,33 @@ bool appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
         file_size -= BLOCKSIZE;
     }
 
-
+    free(block);
     free(header->name);
     free(header->size);
     free(header->mtime);
     free(header);
-    return false;
+}
+
+void write_end_block(int fd_archive){
+    char zero_block[BLOCKSIZE] = {'\0'};
+    for (int i = BLOCKSIZE; i <= ENDBLOCKSIZE; i += BLOCKSIZE) {
+        write(fd_archive, zero_block, BLOCKSIZE);
+        if (i != ENDBLOCKSIZE) {
+            write(fd_archive, "\n", 1);
+        }
+    }
 }
 
 bool createArchive(arguments* argumentNode) {
     if (argumentNode == NULL){
         printf("Error: No arguments while f flag is active\n");
-        return true;
+        return false;
     } else {
         int fd = open(argumentNode->name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
         if (fd == -1) {
             printf("Error: something went wrong while creating the archive");
-            return true;
+            return false;
         }
         
         printf("Archive %s created with following arguments:\n", argumentNode->name);
@@ -187,7 +192,7 @@ bool createArchive(arguments* argumentNode) {
             int fd_file = open(next_argument->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             if (fd_file == -1) {
                 printf("Error: something went wrong while opening the file");
-                return true;
+                return false;
             }
             appendToArchive(fd, fd_file, next_argument);
             close(fd_file);
@@ -195,11 +200,25 @@ bool createArchive(arguments* argumentNode) {
             free(argumentNode);
             argumentNode = next_argument;
         }
+        write_end_block(fd);
         free(argumentNode->name);
         free(argumentNode);
         close(fd);
     }
-    return false;
+    return true;
+}
+
+bool readArchive(arguments* argumentNode) {
+    int fd = open(argumentNode->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+
+    if (fd == -1) {
+        printf("Error: something went wrong while creating the archive");
+        return false;
+    }
+
+    //To be continued ........
+
+    return true;
 }
 
 int main(int argc, char** argv) {
@@ -210,16 +229,20 @@ int main(int argc, char** argv) {
 
     printf("Options: \nc:%d, r:%d, f:%d, t:%d, u:%d, x:%d\n", op->c, op->r, op->f, op->t, op->u, op->x);
 
+    bool result = false;
     if (op->c && op->f) {
         if (!createArchive(argumentNode)) {
-            return 1;
+            result = true;
+        }
+    } else if (op->t && op->f) {
+        if (!readArchive(argumentNode)) {
+            result = true;
         }
     }
 
     free(op);
-    free(argumentNode);
-    //free(p_data);
-    return 0;
+    free(p_data);
+    return result;
 }
 
 
