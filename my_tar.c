@@ -1,4 +1,7 @@
 #include "my_tar.h"
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 
 void initializeOptions(options* op) {
@@ -114,9 +117,11 @@ posix_header* initialize_header(int fd, arguments* argumentNode) {
     initialize_part_of_header(&(header->mtime), SIZE_OF_TIME);
 
     strncpy(header->name, argumentNode->name, strlen(argumentNode->name));
-    int fsize = lseek(fd, 0, SEEK_END);
-    lseek(fd, 0, SEEK_SET); //get back to the beginning
-    char* file_size_string = my_itoa(fsize);
+    struct stat st;
+    stat(argumentNode->name, &st);
+    off_t size = st.st_size;
+
+    char* file_size_string = my_itoa(size);
     strncpy(header->size, file_size_string, strlen(file_size_string));
     free(file_size_string);
 
@@ -138,8 +143,9 @@ void appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
 
     char* block = malloc(sizeof(char) * BLOCKSIZE);
     clearBlock(block);
-    int file_size = lseek(fd_file, 0, SEEK_END);
-    lseek(fd_file, 0, SEEK_SET); //get back to the beginning
+    struct stat st;
+    stat(argumentNode->name, &st);
+    off_t file_size = st.st_size;
 
     while(file_size > 0) {
         if (file_size / BLOCKSIZE > 0) {
@@ -216,7 +222,58 @@ bool readArchive(arguments* argumentNode) {
         return false;
     }
 
-    //To be continued ........
+    char file_name[SIZE_OF_NAME];
+    char file_size[SIZE_OF_FILESIZE];
+    read(fd, file_name, SIZE_OF_NAME);
+
+    while(strlen(file_name) > 0) {
+        printf("%s\n", file_name);
+        read(fd, file_size, SIZE_OF_FILESIZE);
+        //printf("Size: %s\n", file_size);
+        lseek(fd, atoi(file_size) + 2, SEEK_CUR);
+        read(fd, file_name, SIZE_OF_NAME);
+    }
+
+    close(fd);
+
+    return true;
+}
+
+bool extractArchive(arguments* argumentNode) {
+    int fd = open(argumentNode->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+
+    if (fd == -1) {
+        printf("Error: something went wrong while creating the archive");
+        return false;
+    }
+
+    char file_name[SIZE_OF_NAME];
+    char file_size[SIZE_OF_FILESIZE];
+    read(fd, file_name, SIZE_OF_NAME);
+
+    while(strlen(file_name) > 0) {
+        printf("%s\n", file_name);
+        read(fd, file_size, SIZE_OF_FILESIZE);
+        //printf("Size: %s\n", file_size);
+        lseek(fd, 1, SEEK_CUR);
+
+        int fd_file = open(file_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+        if (fd_file == -1) {
+            printf("Error: something went wrong while opening the file");
+            return false;
+        }
+        int file_size_number = atoi(file_size);
+        char buffer[file_size_number];
+        read(fd, buffer, file_size_number);
+        write(fd_file, buffer, file_size_number);
+        close(fd_file);
+
+        lseek(fd, 1, SEEK_CUR);
+
+        read(fd, file_name, SIZE_OF_NAME);
+    }
+
+    close(fd);
 
     return true;
 }
@@ -227,7 +284,7 @@ int main(int argc, char** argv) {
     options* op = p_data->options;
     arguments* argumentNode = p_data->arguments;
 
-    printf("Options: \nc:%d, r:%d, f:%d, t:%d, u:%d, x:%d\n", op->c, op->r, op->f, op->t, op->u, op->x);
+    //printf("Options: \nc:%d, r:%d, f:%d, t:%d, u:%d, x:%d\n", op->c, op->r, op->f, op->t, op->u, op->x);
 
     bool result = false;
     if (op->c && op->f) {
@@ -236,6 +293,10 @@ int main(int argc, char** argv) {
         }
     } else if (op->t && op->f) {
         if (!readArchive(argumentNode)) {
+            result = true;
+        }
+    } else if (op->x && op->f) {
+        if (!extractArchive(argumentNode)) {
             result = true;
         }
     }
