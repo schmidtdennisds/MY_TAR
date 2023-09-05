@@ -94,6 +94,9 @@ char* my_itoa(int fsize) {
     char* string = malloc(sizeof(char) * SIZE_OF_FILESIZE);
     int fsizeCopy = fsize;
     int index = 0;
+    if (fsize == 0) {
+        index = 1;
+    }
     while (fsizeCopy > 0) {
         fsizeCopy /= 10;
         index++;
@@ -124,6 +127,7 @@ posix_header* initialize_header(int fd, arguments* argumentNode) {
     char* file_size_string = my_itoa(size);
     strncpy(header->size, file_size_string, strlen(file_size_string));
     free(file_size_string);
+
 
     struct stat attr;
     lstat(argumentNode->name, &attr);
@@ -237,7 +241,13 @@ bool readArchive(arguments* argumentNode) {
         read(fd, file_size, SIZE_OF_FILESIZE);
         lseek(fd, SIZE_OF_TIME, SEEK_CUR);
         //printf("Size: %s\n", file_size);
-        lseek(fd, atoi(file_size) + 2, SEEK_CUR);
+        int file_size_number = atoi(file_size);
+        if (file_size_number == 0) {
+            lseek(fd, 1, SEEK_CUR);
+        } else {
+            lseek(fd, atoi(file_size) + 2, SEEK_CUR);
+        }
+        
         read(fd, file_name, SIZE_OF_NAME);
     }
 
@@ -266,18 +276,34 @@ bool extractArchive(arguments* argumentNode) {
         //printf("Size: %s\n", file_size);
         lseek(fd, 1, SEEK_CUR);
 
-        int fd_file = open(file_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+        bool created = false;
+        int fd_file = open(file_name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
         if (fd_file == -1) {
-            printf("Error: something went wrong while opening the file");
-            return false;
+            fd_file = open(file_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            created = true;
+            if (fd_file == -1) {
+                printf("Error: something went wrong while opening the file");
+                return false;
+            }
         }
+
+        struct stat attr;
+        lstat(file_name, &attr);
+        int seconds = attr.st_mtim.tv_sec;
+
         int file_size_number = atoi(file_size);
         char buffer[file_size_number];
         read(fd, buffer, file_size_number);
-        write(fd_file, buffer, file_size_number);
+
+        if (created || !created && atoi(file_time) < seconds) {
+            write(fd_file, buffer, file_size_number);
+        }
+
         close(fd_file);
 
-        lseek(fd, 1, SEEK_CUR);
+        if (file_size_number != 0) {
+            lseek(fd, 1, SEEK_CUR);
+        }
 
         read(fd, file_name, SIZE_OF_NAME);
     }
