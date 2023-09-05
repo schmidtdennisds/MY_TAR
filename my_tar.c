@@ -94,7 +94,7 @@ char* my_itoa(int fsize) {
     char* string = malloc(sizeof(char) * SIZE_OF_FILESIZE);
     int fsizeCopy = fsize;
     int index = 0;
-    while (fsizeCopy % 10 != 0) {
+    while (fsizeCopy > 0) {
         fsizeCopy /= 10;
         index++;
     }
@@ -125,6 +125,11 @@ posix_header* initialize_header(int fd, arguments* argumentNode) {
     strncpy(header->size, file_size_string, strlen(file_size_string));
     free(file_size_string);
 
+    struct stat attr;
+    lstat(argumentNode->name, &attr);
+    char* seconds = my_itoa(attr.st_mtim.tv_sec);
+    strncpy(header->mtime, seconds, strlen(seconds));
+
     // time is missing
     return header;
 }
@@ -139,6 +144,7 @@ void appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
     posix_header* header = initialize_header(fd_file, argumentNode);
     write(fd_archive, header->name, SIZE_OF_NAME);
     write(fd_archive, header->size, SIZE_OF_FILESIZE);
+    write(fd_archive, header->mtime, SIZE_OF_FILESIZE);
     write(fd_archive, "\n", 1);
 
     char* block = malloc(sizeof(char) * BLOCKSIZE);
@@ -229,6 +235,7 @@ bool readArchive(arguments* argumentNode) {
     while(strlen(file_name) > 0) {
         printf("%s\n", file_name);
         read(fd, file_size, SIZE_OF_FILESIZE);
+        lseek(fd, SIZE_OF_TIME, SEEK_CUR);
         //printf("Size: %s\n", file_size);
         lseek(fd, atoi(file_size) + 2, SEEK_CUR);
         read(fd, file_name, SIZE_OF_NAME);
@@ -249,11 +256,13 @@ bool extractArchive(arguments* argumentNode) {
 
     char file_name[SIZE_OF_NAME];
     char file_size[SIZE_OF_FILESIZE];
+    char file_time[SIZE_OF_TIME];
     read(fd, file_name, SIZE_OF_NAME);
 
     while(strlen(file_name) > 0) {
         printf("%s\n", file_name);
         read(fd, file_size, SIZE_OF_FILESIZE);
+        read(fd, file_time, SIZE_OF_TIME);
         //printf("Size: %s\n", file_size);
         lseek(fd, 1, SEEK_CUR);
 
@@ -278,6 +287,53 @@ bool extractArchive(arguments* argumentNode) {
     return true;
 }
 
+void changeOffsetOfArchive(int fd, char* archive_name) {
+    struct stat st;
+    stat(archive_name, &st);
+    off_t size = st.st_size;
+
+    lseek(fd, size - ENDBLOCKSIZE - 1, SEEK_CUR);
+}
+
+bool appendArchive(arguments* argumentNode) {
+    if (argumentNode == NULL){
+        printf("Error: No arguments while f flag is active\n");
+        return false;
+    } else {
+        int fd = open(argumentNode->name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+
+        if (fd == -1) {
+            printf("Error: something went wrong while opening the archive");
+            return false;
+        }
+
+        changeOffsetOfArchive(fd, argumentNode->name);
+        
+        printf("Archive %s appended with following arguments:\n", argumentNode->name);
+
+        while(argumentNode->next) {
+            arguments* next_argument = argumentNode->next;
+
+            printf("Argument: %s\n", next_argument->name);
+            int fd_file = open(next_argument->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            if (fd_file == -1) {
+                printf("Error: something went wrong while opening the file");
+                return false;
+            }
+            appendToArchive(fd, fd_file, next_argument);
+            close(fd_file);
+            free(argumentNode->name);
+            free(argumentNode);
+            argumentNode = next_argument;
+        }
+        write_end_block(fd);
+        free(argumentNode->name);
+        free(argumentNode);
+        close(fd);
+    }
+    return true;
+}
+
 int main(int argc, char** argv) {
 
     data* p_data = parsing(argc, argv);
@@ -297,6 +353,10 @@ int main(int argc, char** argv) {
         }
     } else if (op->x && op->f) {
         if (!extractArchive(argumentNode)) {
+            result = true;
+        }
+    } else if (op->r && op->f) {
+        if (!appendArchive(argumentNode)) {
             result = true;
         }
     }
