@@ -1,7 +1,4 @@
 #include "my_tar.h"
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 
 
 void initializeOptions(options* op) {
@@ -102,12 +99,13 @@ char* my_itoa(int fsize) {
         index++;
     }
     for (int i = 1; i <= index && i < SIZE_OF_FILESIZE; i++) {
-        string[index - i] = (fsize % 10) + '0';
+        string[SIZE_OF_FILESIZE - 1 - i] = (fsize % 10) + '0';
         fsize /= 10;
     }
-    for (int k = index; k < SIZE_OF_FILESIZE; k++) {
-        string[k] = '\0';
+    for (int k = 0; k < SIZE_OF_FILESIZE - 1 - index; k++) {
+        string[k] = '0';
     }
+    string[SIZE_OF_FILESIZE - 1] = '\0';
     return string;
 }
 
@@ -116,8 +114,10 @@ char* my_itoa(int fsize) {
 posix_header* initialize_header(int fd, arguments* argumentNode) {
     posix_header* header = malloc(sizeof(posix_header));
     initialize_part_of_header(&(header->name), SIZE_OF_NAME);
+    initialize_part_of_header(&(header->spacer1), SIZE_OF_SPACER_ONE);
     initialize_part_of_header(&(header->size), SIZE_OF_FILESIZE);
     initialize_part_of_header(&(header->mtime), SIZE_OF_TIME);
+    initialize_part_of_header(&(header->spacer2), SIZE_OF_SPACER_TWO);
 
     strncpy(header->name, argumentNode->name, strlen(argumentNode->name));
     struct stat st;
@@ -147,9 +147,10 @@ void clearBlock(char* block) {
 void appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
     posix_header* header = initialize_header(fd_file, argumentNode);
     write(fd_archive, header->name, SIZE_OF_NAME);
+    write(fd_archive, header->spacer1, SIZE_OF_SPACER_ONE);
     write(fd_archive, header->size, SIZE_OF_FILESIZE);
     write(fd_archive, header->mtime, SIZE_OF_FILESIZE);
-    write(fd_archive, "\n", 1);
+    write(fd_archive, header->spacer2, SIZE_OF_SPACER_TWO);
 
     char* block = malloc(sizeof(char) * BLOCKSIZE);
     clearBlock(block);
@@ -164,7 +165,8 @@ void appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
         } else {
             read(fd_file, block, file_size);
             write(fd_archive, block, file_size);
-            write(fd_archive, "\n", 1);
+            clearBlock(block);
+            write(fd_archive, block, BLOCKSIZE - file_size);
         }
         clearBlock(block);
         file_size -= BLOCKSIZE;
@@ -172,8 +174,10 @@ void appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
 
     free(block);
     free(header->name);
+    free(header->spacer1);
     free(header->size);
     free(header->mtime);
+    free(header->spacer2);
     free(header);
 }
 
@@ -181,9 +185,6 @@ void write_end_block(int fd_archive){
     char zero_block[BLOCKSIZE] = {'\0'};
     for (int i = BLOCKSIZE; i <= ENDBLOCKSIZE; i += BLOCKSIZE) {
         write(fd_archive, zero_block, BLOCKSIZE);
-        if (i != ENDBLOCKSIZE) {
-            write(fd_archive, "\n", 1);
-        }
     }
 }
 
@@ -199,15 +200,15 @@ bool createArchive(arguments* argumentNode) {
             return false;
         }
         
-        printf("Archive %s created with following arguments:\n", argumentNode->name);
+        //printf("Archive %s created with following arguments:\n", argumentNode->name);
 
         while(argumentNode->next) {
             arguments* next_argument = argumentNode->next;
 
-            printf("Argument: %s\n", next_argument->name);
+            //printf("Argument: %s\n", next_argument->name);
             int fd_file = open(next_argument->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             if (fd_file == -1) {
-                printf("Error: something went wrong while opening the file");
+                printf("Error: something went wrong while opening the file\n");
                 return false;
             }
             appendToArchive(fd, fd_file, next_argument);
@@ -238,16 +239,15 @@ bool readArchive(arguments* argumentNode) {
 
     while(strlen(file_name) > 0) {
         printf("%s\n", file_name);
+        lseek(fd, SIZE_OF_SPACER_ONE, SEEK_CUR);
         read(fd, file_size, SIZE_OF_FILESIZE);
         lseek(fd, SIZE_OF_TIME, SEEK_CUR);
+        lseek(fd, SIZE_OF_SPACER_TWO, SEEK_CUR);
         //printf("Size: %s\n", file_size);
         int file_size_number = atoi(file_size);
-        if (file_size_number == 0) {
-            lseek(fd, 1, SEEK_CUR);
-        } else {
-            lseek(fd, atoi(file_size) + 2, SEEK_CUR);
-        }
-        
+        lseek(fd, atoi(file_size), SEEK_CUR);
+        int remaining = BLOCKSIZE - (file_size_number % BLOCKSIZE);
+        lseek(fd, remaining, SEEK_CUR);
         read(fd, file_name, SIZE_OF_NAME);
     }
 
@@ -271,10 +271,11 @@ bool extractArchive(arguments* argumentNode) {
 
     while(strlen(file_name) > 0) {
         printf("%s\n", file_name);
+        lseek(fd, SIZE_OF_SPACER_ONE, SEEK_CUR);
         read(fd, file_size, SIZE_OF_FILESIZE);
         read(fd, file_time, SIZE_OF_TIME);
+        lseek(fd, SIZE_OF_SPACER_TWO, SEEK_CUR);
         //printf("Size: %s\n", file_size);
-        lseek(fd, 1, SEEK_CUR);
 
         bool created = false;
         int fd_file = open(file_name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -294,16 +295,14 @@ bool extractArchive(arguments* argumentNode) {
         int file_size_number = atoi(file_size);
         char buffer[file_size_number];
         read(fd, buffer, file_size_number);
+        int remaining = BLOCKSIZE - (file_size_number % BLOCKSIZE);
+        lseek(fd, remaining, SEEK_CUR);
 
         if (created || !created && atoi(file_time) < seconds) {
             write(fd_file, buffer, file_size_number);
         }
 
         close(fd_file);
-
-        if (file_size_number != 0) {
-            lseek(fd, 1, SEEK_CUR);
-        }
 
         read(fd, file_name, SIZE_OF_NAME);
     }
@@ -318,7 +317,7 @@ void changeOffsetOfArchive(int fd, char* archive_name) {
     stat(archive_name, &st);
     off_t size = st.st_size;
 
-    lseek(fd, size - ENDBLOCKSIZE - 1, SEEK_CUR);
+    lseek(fd, size - ENDBLOCKSIZE, SEEK_CUR);
 }
 
 bool appendArchive(arguments* argumentNode) {
@@ -335,12 +334,12 @@ bool appendArchive(arguments* argumentNode) {
 
         changeOffsetOfArchive(fd, argumentNode->name);
         
-        printf("Archive %s appended with following arguments:\n", argumentNode->name);
+        //printf("Archive %s appended with following arguments:\n", argumentNode->name);
 
         while(argumentNode->next) {
             arguments* next_argument = argumentNode->next;
 
-            printf("Argument: %s\n", next_argument->name);
+            //printf("Argument: %s\n", next_argument->name);
             int fd_file = open(next_argument->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             if (fd_file == -1) {
                 printf("Error: something went wrong while opening the file");
