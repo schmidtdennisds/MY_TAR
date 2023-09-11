@@ -1,5 +1,9 @@
 #include "my_tar.h"
 
+void my_print(int fd, char* string) {
+    write(fd, string, strlen(string));
+}
+
 
 void initializeOptions(options* op) {
     op->c = false;
@@ -190,13 +194,15 @@ void write_end_block(int fd_archive){
 
 bool createArchive(arguments* argumentNode) {
     if (argumentNode == NULL){
-        printf("Error: No arguments while f flag is active\n");
+        my_print(2,"Error: No arguments while f flag is active\n");
         return false;
     } else {
         int fd = open(argumentNode->name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
         if (fd == -1) {
-            printf("Error: something went wrong while creating the archive");
+            my_print(2,"my_tar: Cannot open ");
+            my_print(2, argumentNode->name);
+            my_print(2, "\n");
             return false;
         }
         
@@ -208,7 +214,9 @@ bool createArchive(arguments* argumentNode) {
             //printf("Argument: %s\n", next_argument->name);
             int fd_file = open(next_argument->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             if (fd_file == -1) {
-                printf("Error: something went wrong while opening the file\n");
+                my_print(2,"my_tar: ");
+                my_print(2, next_argument->name);
+                my_print(2,": Cannot stat: No such file or directory\n");
                 return false;
             }
             appendToArchive(fd, fd_file, next_argument);
@@ -229,7 +237,9 @@ bool readArchive(arguments* argumentNode) {
     int fd = open(argumentNode->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
     if (fd == -1) {
-        printf("Error: something went wrong while creating the archive");
+        my_print(2,"my_tar: Cannot open ");
+        my_print(2, argumentNode->name);
+        my_print(2, "\n");
         return false;
     }
 
@@ -238,7 +248,8 @@ bool readArchive(arguments* argumentNode) {
     read(fd, file_name, SIZE_OF_NAME);
 
     while(strlen(file_name) > 0) {
-        printf("%s\n", file_name);
+        my_print(1, file_name);
+        my_print(1, "\n");
         lseek(fd, SIZE_OF_SPACER_ONE, SEEK_CUR);
         read(fd, file_size, SIZE_OF_FILESIZE);
         lseek(fd, SIZE_OF_TIME, SEEK_CUR);
@@ -260,7 +271,9 @@ bool extractArchive(arguments* argumentNode) {
     int fd = open(argumentNode->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
     if (fd == -1) {
-        printf("Error: something went wrong while creating the archive");
+        my_print(2,"my_tar: Cannot open ");
+        my_print(2, argumentNode->name);
+        my_print(2, "\n");
         return false;
     }
 
@@ -270,7 +283,8 @@ bool extractArchive(arguments* argumentNode) {
     read(fd, file_name, SIZE_OF_NAME);
 
     while(strlen(file_name) > 0) {
-        printf("%s\n", file_name);
+        my_print(1, file_name);
+        my_print(1, "\n");
         lseek(fd, SIZE_OF_SPACER_ONE, SEEK_CUR);
         read(fd, file_size, SIZE_OF_FILESIZE);
         read(fd, file_time, SIZE_OF_TIME);
@@ -283,7 +297,9 @@ bool extractArchive(arguments* argumentNode) {
             fd_file = open(file_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             created = true;
             if (fd_file == -1) {
-                printf("Error: something went wrong while opening the file");
+                my_print(2,"my_tar: ");
+                my_print(2, file_name);
+                my_print(2,": Cannot stat: No such file or directory\n");
                 return false;
             }
         }
@@ -320,19 +336,72 @@ void changeOffsetOfArchive(int fd, char* archive_name) {
     lseek(fd, size - ENDBLOCKSIZE, SEEK_CUR);
 }
 
-bool appendArchive(arguments* argumentNode) {
-    if (argumentNode == NULL){
-        printf("Error: No arguments while f flag is active\n");
+bool is_file_newer_than_in_archive(int fd_archive, char* new_file_name) {
+    char file_time[SIZE_OF_TIME];
+    char file_size[SIZE_OF_FILESIZE];
+    char file_name[SIZE_OF_NAME];
+
+    bool is_file_in_archive = false;
+
+    lseek(fd_archive, 0, SEEK_CUR);
+    read(fd_archive, file_name, SIZE_OF_NAME);
+    //printf("Archive_file_name: %s\n", file_name);
+
+    while(strlen(file_name) > 0) {
+        //printf("Archive_file_name: %s\n", file_name);
+        if (strcmp(file_name, new_file_name) == 0) {
+            is_file_in_archive = true;
+            //printf("File found\n");
+            lseek(fd_archive, SIZE_OF_SPACER_ONE, SEEK_CUR);
+            read(fd_archive, file_size, SIZE_OF_FILESIZE);
+            read(fd_archive, file_time, SIZE_OF_TIME);
+
+            struct stat attr;
+            lstat(new_file_name, &attr);
+            int seconds = attr.st_mtim.tv_sec;
+
+            if (seconds > atoi(file_time)) {
+                //printf("Time of new file: %d, time of archive-file: %d\n", seconds, atoi(file_time));
+                return true;
+            } else {
+                lseek(fd_archive, SIZE_OF_SPACER_TWO, SEEK_CUR);
+            }
+        } else {
+            lseek(fd_archive, SIZE_OF_SPACER_ONE, SEEK_CUR);
+            read(fd_archive, file_size, SIZE_OF_FILESIZE);
+            lseek(fd_archive, SIZE_OF_TIME, SEEK_CUR);
+            lseek(fd_archive, SIZE_OF_SPACER_TWO, SEEK_CUR);
+        }
+        int file_size_number = atoi(file_size);
+        lseek(fd_archive, atoi(file_size), SEEK_CUR);
+        int remaining = BLOCKSIZE - (file_size_number % BLOCKSIZE);
+        lseek(fd_archive, remaining, SEEK_CUR);
+        read(fd_archive, file_name, SIZE_OF_NAME);
+    }
+
+    if (is_file_in_archive) {
         return false;
     } else {
-        int fd = open(argumentNode->name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+        return true;
+    }
+}
+
+bool appendArchive(arguments* argumentNode, bool searchFirst) {
+    if (argumentNode == NULL){
+        my_print(2,"Error: No arguments while f flag is active\n");
+        return false;
+    } else {
+        char archive_name[SIZE_OF_NAME] = {'\0'};
+        strcpy(archive_name, argumentNode->name);
+
+        int fd = open(archive_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
         if (fd == -1) {
-            printf("Error: something went wrong while opening the archive");
+            my_print(2,"my_tar: Cannot open ");
+            my_print(2, argumentNode->name);
+            my_print(2, "\n");
             return false;
         }
-
-        changeOffsetOfArchive(fd, argumentNode->name);
         
         //printf("Archive %s appended with following arguments:\n", argumentNode->name);
 
@@ -342,10 +411,17 @@ bool appendArchive(arguments* argumentNode) {
             //printf("Argument: %s\n", next_argument->name);
             int fd_file = open(next_argument->name, O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             if (fd_file == -1) {
-                printf("Error: something went wrong while opening the file");
+                my_print(2,"my_tar: ");
+                my_print(2, next_argument->name);
+                my_print(2,": Cannot stat: No such file or directory\n");
                 return false;
             }
-            appendToArchive(fd, fd_file, next_argument);
+            if (!searchFirst || searchFirst && is_file_newer_than_in_archive(fd, next_argument->name)) {
+                lseek(fd, 0, SEEK_CUR);
+                changeOffsetOfArchive(fd, archive_name);
+                appendToArchive(fd, fd_file, next_argument);
+            }
+            
             close(fd_file);
             free(argumentNode->name);
             free(argumentNode);
@@ -381,7 +457,11 @@ int main(int argc, char** argv) {
             result = true;
         }
     } else if (op->r && op->f) {
-        if (!appendArchive(argumentNode)) {
+        if (!appendArchive(argumentNode, false)) {
+            result = true;
+        }
+    } else if (op->u && op->f) {
+        if (!appendArchive(argumentNode, true)) {
             result = true;
         }
     }
