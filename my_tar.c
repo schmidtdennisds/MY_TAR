@@ -3,7 +3,7 @@
 
 
 void appendToArchive(int fd_archive, int fd_file, arguments* argumentNode) {
-    posix_header* header = initialize_header(fd_file, argumentNode);
+    posix_header* header = initialize_header(argumentNode);
     write(fd_archive, header->name, SIZE_OF_NAME);
     write(fd_archive, header->spacer1, SIZE_OF_SPACER_ONE);
     write(fd_archive, header->size, SIZE_OF_FILESIZE);
@@ -168,7 +168,7 @@ bool extractArchive(arguments* argumentNode) {
         int remaining = BLOCKSIZE - (file_size_number % BLOCKSIZE);
         lseek(fd, remaining, SEEK_CUR);
 
-        if (created || !created && atoi(file_time) < seconds) {
+        if (created || (!created && atoi(file_time) < seconds)) {
             write(fd_file, buffer, file_size_number);
         }
 
@@ -270,7 +270,7 @@ bool appendArchive(arguments* argumentNode, bool searchFirst) {
                 my_print(2,": Cannot stat: No such file or directory\n");
                 return false;
             }
-            if (!searchFirst || searchFirst && is_file_newer_than_in_archive(fd, next_argument->name)) {
+            if (!searchFirst || (searchFirst && is_file_newer_than_in_archive(fd, next_argument->name))) {
                 lseek(fd, 0, SEEK_CUR);
                 changeOffsetOfArchive(fd, archive_name);
                 appendToArchive(fd, fd_file, next_argument);

@@ -52,7 +52,7 @@ data* parsing(int argc, char** argv) {
             argumentList = parsingArguments(i, argc, argv);
             break;
         }
-        for (int j = 1; j < strlen(argv[i]); j++) {
+        for (size_t j = 1; j < strlen(argv[i]); j++) {
             switch (argv[i][j]) {
                 case 'c': 
                     options->c = true;
@@ -115,7 +115,7 @@ char* my_itoa(int fsize) {
 
 
 
-posix_header* initialize_header(int fd, arguments* argumentNode) {
+posix_header* initialize_header(arguments* argumentNode) {
     posix_header* header = malloc(sizeof(posix_header));
     initialize_part_of_header(&(header->name), SIZE_OF_NAME);
     initialize_part_of_header(&(header->spacer1), SIZE_OF_SPACER_ONE);
