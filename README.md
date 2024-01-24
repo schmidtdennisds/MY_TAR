@@ -5,7 +5,7 @@
 The challenge is to reimplement the tar function to archive and extract files.
 
 ## Description
-I broke the problem down into manageable chucnks and tried to solve them.
+I broke the problem down into manageable chunks and tried to solve them.
 
 ## Installation
 To install it run make
